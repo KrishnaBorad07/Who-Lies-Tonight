@@ -1,90 +1,82 @@
 // =============================================================================
-// components/AvatarPicker.tsx – Ready Player Me 3D avatar creator
-// FIXED: RPM modal uses createPortal to escape framer-motion transform context
-//        so position:fixed is truly fullscreen.
+// components/AvatarPicker.tsx – Custom modular avatar creator
+// Lets players pick a base character, outfit, accessory, and customize colors.
 // =============================================================================
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Canvas } from '@react-three/fiber';
-import { useGLTF, OrbitControls, Environment } from '@react-three/drei';
-import { getAvatarId, getAvatarColor, getInitials } from '../lib/avatarUtils';
+import {
+  HEADS,
+  BODIES,
+  ACCESSORIES,
+  AVATAR_COLORS,
+  COLOR_KEYS,
+  DEFAULT_AVATAR as DEFAULT_CONFIG,
+  renderAvatarSVG,
+} from '../lib/avatarConfig';
 import type { Avatar } from '../types/game';
 
-export const DEFAULT_AVATAR: Avatar = { url: '' };
+export const DEFAULT_AVATAR: Avatar = {
+  url: '',
+  head: DEFAULT_CONFIG.head,
+  body: DEFAULT_CONFIG.body,
+  accessory: DEFAULT_CONFIG.accessory,
+  colors: { ...DEFAULT_CONFIG.colors },
+};
 
-// RPM demo subdomain — replace with your own after signing up at readyplayer.me/developers
-const RPM_IFRAME_URL =
-  'https://demo.readyplayer.me/avatar?frameApi&clearCache&bodyType=fullbody';
+const CHARACTER_PRESETS = [
+  { label: 'The Don', head: 0, body: 0, accessory: 0, colors: { skin: '#8b7355', hair: '#1a1a1a', outfit: '#1a1a1a', accent: '#ffd700' } },
+  { label: 'The Shadow', head: 5, body: 1, accessory: 1, colors: { skin: '#c49a6c', hair: '#2a1a1a', outfit: '#2a1a1a', accent: '#9b00ff' } },
+  { label: 'The Enforcer', head: 8, body: 4, accessory: 4, colors: { skin: '#6b4a3a', hair: '#1a1a1a', outfit: '#3a2a1a', accent: '#ff0000' } },
+  { label: 'The Charmer', head: 4, body: 3, accessory: 6, colors: { skin: '#d4a67d', hair: '#3a2a1a', outfit: '#1a1a2a', accent: '#00d4ff' } },
+  { label: 'The Ghost', head: 2, body: 5, accessory: 9, colors: { skin: '#ffffff', hair: '#888888', outfit: '#4a4a4a', accent: '#00ff88' } },
+];
 
-// ── Headshot URL builder ──────────────────────────────────────────────────────
-// RPM render API: https://models.readyplayer.me/{id}.png
-// Extra params can break the render for demo avatars, so keep it simple.
-function buildHeadshotUrl(url: string): string {
-  if (!url) return '';
-  const id = getAvatarId(url);
-  return `https://models.readyplayer.me/${id}.png`;
-}
+type EditTab = 'preset' | 'face' | 'outfit' | 'accessory' | 'colors';
 
-// ── 3D Avatar preview ─────────────────────────────────────────────────────────
-function AvatarModel({ url }: { url: string }) {
-  const { scene } = useGLTF(url);
+function AvatarPreview({ head, body, accessory, colors, size = 160 }: {
+  head: number; body: number; accessory: number; colors: Record<string, string>; size?: number;
+}) {
+  const svgStr = useMemo(() => renderAvatarSVG(head, body, accessory, colors, size), [head, body, accessory, colors, size]);
   return (
-    <primitive
-      object={scene}
-      position={[0, -0.95, 0]}
-      scale={1}
-      rotation={[0, 0.3, 0]}
+    <div
+      dangerouslySetInnerHTML={{ __html: svgStr }}
+      style={{ width: size, height: size * 1.25, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
     />
   );
 }
 
-// ── Fallback initials circle ──────────────────────────────────────────────────
-function InitialsFallback({ name, size = 80 }: { name: string; size?: number }) {
-  const color = getAvatarColor(name || 'X');
-  return (
-    <div style={{
-      width: size, height: size, borderRadius: '50%',
-      background: `radial-gradient(135deg, ${color}cc, ${color}44)`,
-      border: `2px solid ${color}`,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-      boxShadow: `0 0 12px ${color}44`,
-    }}>
-      <span style={{ fontFamily: 'var(--font-display)', fontSize: size * 0.32, color: '#fff', letterSpacing: '0.05em', lineHeight: 1 }}>
-        {getInitials(name || '??')}
-      </span>
-    </div>
+function CreatorModal({ initial, onSave, onClose }: {
+  initial: Avatar; onSave: (a: Avatar) => void; onClose: () => void;
+}) {
+  const [head, setHead] = useState(initial.head ?? 0);
+  const [body, setBody] = useState(initial.body ?? 0);
+  const [accessory, setAccessory] = useState(initial.accessory ?? 0);
+  const [colors, setColors] = useState<Record<string, string>>(
+    initial.colors ? { ...initial.colors } : { ...DEFAULT_CONFIG.colors }
   );
-}
+  const [tab, setTab] = useState<EditTab>('preset');
 
-// ── RPM Iframe modal — rendered via createPortal at document.body ─────────────
-// This is CRITICAL: framer-motion applies CSS transforms on parent elements
-// which create a new "containing block" for position:fixed, making it not
-// actually fullscreen. createPortal escapes the transform context entirely.
-function RPMModal({ onExport, onClose }: { onExport: (url: string) => void; onClose: () => void }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [loaded, setLoaded] = useState(false);
+  const setColor = (key: string, val: string) => setColors((prev) => ({ ...prev, [key]: val }));
 
-  useEffect(() => {
-    function handleMessage(event: MessageEvent) {
-      try {
-        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-        if (data?.source !== 'readyplayerme') return;
+  const handleSave = () => {
+    onSave({ url: '', head, body, accessory, colors: { ...colors } });
+  };
 
-        if (data.eventName === 'v1.frame.ready') {
-          iframeRef.current?.contentWindow?.postMessage(
-            JSON.stringify({ target: 'readyplayerme', type: 'subscribe', eventName: 'v1.avatar.exported' }),
-            '*'
-          );
-        }
-        if (data.eventName === 'v1.avatar.exported' && data.data?.url) {
-          onExport(data.data.url);
-        }
-      } catch { /* ignore non-JSON */ }
-    }
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [onExport]);
+  const applyPreset = (p: typeof CHARACTER_PRESETS[0]) => {
+    setHead(p.head);
+    setBody(p.body);
+    setAccessory(p.accessory);
+    setColors({ ...p.colors });
+  };
+
+  const tabs: { key: EditTab; label: string }[] = [
+    { key: 'preset', label: 'PRESETS' },
+    { key: 'face', label: 'FACE' },
+    { key: 'outfit', label: 'OUTFIT' },
+    { key: 'accessory', label: 'GEAR' },
+    { key: 'colors', label: 'COLORS' },
+  ];
 
   const modal = (
     <motion.div
@@ -93,8 +85,9 @@ function RPMModal({ onExport, onClose }: { onExport: (url: string) => void; onCl
       exit={{ opacity: 0 }}
       style={{
         position: 'fixed', inset: 0, zIndex: 99999,
-        background: '#000',
+        background: 'rgba(0,0,0,0.95)',
         display: 'flex', flexDirection: 'column',
+        overflow: 'hidden',
       }}
     >
       {/* Top bar */}
@@ -104,44 +97,220 @@ function RPMModal({ onExport, onClose }: { onExport: (url: string) => void; onCl
         background: 'rgba(5,5,5,0.95)',
         borderBottom: '1px solid rgba(255,215,0,0.15)',
       }}>
-        <div>
-          <p style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', color: 'var(--noir-gold)', letterSpacing: '0.15em' }}>
-            🎭 CREATE YOUR CHARACTER
-          </p>
-          <p style={{ fontSize: '0.68rem', color: 'var(--noir-text-dim)', marginTop: 2 }}>
-            Design your look, then click <strong style={{ color: 'var(--noir-gold)' }}>Save</strong> inside the creator
-          </p>
+        <p style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', color: 'var(--noir-gold)', letterSpacing: '0.15em' }}>
+          CREATE YOUR CHARACTER
+        </p>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button
+            onClick={handleSave}
+            style={{
+              background: 'rgba(0,255,100,0.15)', border: '1px solid rgba(0,255,100,0.4)',
+              borderRadius: 4, color: '#00ff88', padding: '0.45rem 1rem',
+              fontFamily: 'var(--font-display)', fontSize: '0.7rem', letterSpacing: '0.1em', cursor: 'pointer',
+            }}
+          >
+            SAVE
+          </button>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'rgba(255,0,0,0.15)', border: '1px solid rgba(255,0,0,0.4)',
+              borderRadius: 4, color: '#ff6666', padding: '0.45rem 1rem',
+              fontFamily: 'var(--font-display)', fontSize: '0.7rem', letterSpacing: '0.1em', cursor: 'pointer',
+            }}
+          >
+            CANCEL
+          </button>
         </div>
-        <button
-          onClick={onClose}
-          style={{ background: 'rgba(255,0,0,0.15)', border: '1px solid rgba(255,0,0,0.4)', borderRadius: 4, color: '#ff6666', padding: '0.45rem 1rem', fontFamily: 'var(--font-display)', fontSize: '0.7rem', letterSpacing: '0.1em', cursor: 'pointer' }}
-        >
-          ✕ CANCEL
-        </button>
       </div>
 
-      {/* Iframe — fills ALL remaining height */}
-      <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
-        {!loaded && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#050505', zIndex: 1 }}>
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
-              style={{ width: 44, height: 44, border: '3px solid rgba(255,215,0,0.15)', borderTopColor: 'var(--noir-gold)', borderRadius: '50%', marginBottom: '1rem' }}
-            />
-            <p style={{ color: 'var(--noir-text-dim)', fontSize: '0.82rem', fontFamily: 'var(--font-display)', letterSpacing: '0.12em' }}>
-              Loading Character Creator...
-            </p>
+      {/* Content */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {/* Left: live preview */}
+        <div style={{
+          width: 280, flexShrink: 0, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: '1rem',
+          background: 'radial-gradient(ellipse at center, #1a0808, #050505)',
+          borderRight: '1px solid rgba(255,0,0,0.15)',
+        }}>
+          <div style={{
+            border: '2px solid rgba(255,0,0,0.3)', borderRadius: '50%',
+            padding: 16, background: 'radial-gradient(circle, rgba(255,0,0,0.06), transparent)',
+            boxShadow: '0 0 30px rgba(255,0,0,0.1)',
+          }}>
+            <AvatarPreview head={head} body={body} accessory={accessory} colors={colors} size={180} />
           </div>
-        )}
-        <iframe
-          ref={iframeRef}
-          src={RPM_IFRAME_URL}
-          title="Ready Player Me Avatar Creator"
-          allow="camera *; microphone *"
-          style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
-          onLoad={() => setLoaded(true)}
-        />
+          <p style={{
+            fontFamily: 'var(--font-display)', fontSize: '0.6rem',
+            color: 'rgba(255,100,100,0.5)', letterSpacing: '0.15em',
+          }}>
+            LIVE PREVIEW
+          </p>
+        </div>
+
+        {/* Right: editor */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Tabs */}
+          <div style={{
+            display: 'flex', gap: 0, borderBottom: '1px solid rgba(255,215,0,0.12)',
+            background: 'rgba(10,10,10,0.9)', flexShrink: 0,
+          }}>
+            {tabs.map((t) => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                style={{
+                  flex: 1, padding: '0.7rem 0.5rem', border: 'none', cursor: 'pointer',
+                  fontFamily: 'var(--font-display)', fontSize: '0.6rem', letterSpacing: '0.12em',
+                  background: tab === t.key ? 'rgba(255,0,0,0.12)' : 'transparent',
+                  color: tab === t.key ? '#ff4444' : 'rgba(255,200,200,0.4)',
+                  borderBottom: tab === t.key ? '2px solid #ff4444' : '2px solid transparent',
+                  transition: 'all 0.2s',
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab content */}
+          <div style={{ flex: 1, overflow: 'auto', padding: '1.2rem' }}>
+            {tab === 'preset' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '0.8rem' }}>
+                {CHARACTER_PRESETS.map((p, i) => (
+                  <motion.button
+                    key={i}
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => applyPreset(p)}
+                    style={{
+                      background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,0,0,0.2)',
+                      borderRadius: 8, padding: '1rem', cursor: 'pointer',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem',
+                      transition: 'border-color 0.2s',
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,0,0,0.6)'; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(255,0,0,0.2)'; }}
+                  >
+                    <AvatarPreview head={p.head} body={p.body} accessory={p.accessory} colors={p.colors} size={80} />
+                    <span style={{
+                      fontFamily: 'var(--font-display)', fontSize: '0.6rem',
+                      color: 'rgba(255,200,200,0.7)', letterSpacing: '0.1em',
+                    }}>
+                      {p.label.toUpperCase()}
+                    </span>
+                  </motion.button>
+                ))}
+              </div>
+            )}
+
+            {tab === 'face' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '0.6rem' }}>
+                {HEADS.map((h) => (
+                  <button
+                    key={h.id}
+                    onClick={() => setHead(h.id)}
+                    style={{
+                      background: head === h.id ? 'rgba(255,0,0,0.15)' : 'rgba(255,255,255,0.03)',
+                      border: head === h.id ? '2px solid #ff4444' : '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 8, padding: '0.8rem 0.5rem', cursor: 'pointer',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem',
+                    }}
+                  >
+                    <span style={{ fontSize: '1.5rem' }}>{h.emoji}</span>
+                    <span style={{
+                      fontFamily: 'var(--font-display)', fontSize: '0.55rem',
+                      color: head === h.id ? '#ff6666' : 'rgba(255,200,200,0.5)', letterSpacing: '0.08em',
+                    }}>
+                      {h.label.toUpperCase()}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {tab === 'outfit' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '0.6rem' }}>
+                {BODIES.map((b) => (
+                  <button
+                    key={b.id}
+                    onClick={() => setBody(b.id)}
+                    style={{
+                      background: body === b.id ? 'rgba(255,0,0,0.15)' : 'rgba(255,255,255,0.03)',
+                      border: body === b.id ? '2px solid #ff4444' : '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 8, padding: '0.8rem 0.5rem', cursor: 'pointer',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem',
+                    }}
+                  >
+                    <span style={{ fontSize: '1.5rem' }}>{b.emoji}</span>
+                    <span style={{
+                      fontFamily: 'var(--font-display)', fontSize: '0.55rem',
+                      color: body === b.id ? '#ff6666' : 'rgba(255,200,200,0.5)', letterSpacing: '0.08em',
+                    }}>
+                      {b.label.toUpperCase()}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {tab === 'accessory' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '0.6rem' }}>
+                {ACCESSORIES.map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => setAccessory(a.id)}
+                    style={{
+                      background: accessory === a.id ? 'rgba(255,0,0,0.15)' : 'rgba(255,255,255,0.03)',
+                      border: accessory === a.id ? '2px solid #ff4444' : '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 8, padding: '0.8rem 0.5rem', cursor: 'pointer',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem',
+                    }}
+                  >
+                    <span style={{ fontSize: '1.5rem' }}>{a.emoji}</span>
+                    <span style={{
+                      fontFamily: 'var(--font-display)', fontSize: '0.55rem',
+                      color: accessory === a.id ? '#ff6666' : 'rgba(255,200,200,0.5)', letterSpacing: '0.08em',
+                    }}>
+                      {a.label.toUpperCase()}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {tab === 'colors' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
+                {COLOR_KEYS.map((key) => (
+                  <div key={key}>
+                    <p style={{
+                      fontFamily: 'var(--font-display)', fontSize: '0.6rem',
+                      color: 'rgba(255,200,200,0.6)', letterSpacing: '0.12em',
+                      marginBottom: '0.5rem', textTransform: 'uppercase',
+                    }}>
+                      {key}
+                    </p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                      {AVATAR_COLORS.map((c) => (
+                        <button
+                          key={c}
+                          onClick={() => setColor(key, c)}
+                          style={{
+                            width: 32, height: 32, borderRadius: '50%', cursor: 'pointer',
+                            background: c,
+                            border: colors[key] === c ? '3px solid #ff4444' : '2px solid rgba(255,255,255,0.12)',
+                            boxShadow: colors[key] === c ? '0 0 12px rgba(255,0,0,0.5)' : 'none',
+                            transition: 'all 0.15s',
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </motion.div>
   );
@@ -161,21 +330,17 @@ interface AvatarPickerProps {
 
 export function AvatarPicker({ value, onChange, playerName = 'You' }: AvatarPickerProps) {
   const [showModal, setShowModal] = useState(false);
-  const [show3D, setShow3D] = useState(false);
-  const [headshotLoaded, setHeadshotLoaded] = useState(false);
-  const [headshotError, setHeadshotError] = useState(false);
-  const hasAvatar = Boolean(value.url);
-  const headshotUrl = hasAvatar ? buildHeadshotUrl(value.url) : '';
+  const hasAvatar = value.head !== undefined;
 
-  const handleExport = useCallback((url: string) => {
-    onChange({ url });
+  const handleSave = useCallback((avatar: Avatar) => {
+    onChange(avatar);
     setShowModal(false);
-    setHeadshotLoaded(false);
-    setHeadshotError(false);
-    setTimeout(() => setShow3D(true), 400);
   }, [onChange]);
 
-  const handleModelError = useCallback(() => setShow3D(false), []);
+  const head = value.head ?? 0;
+  const body = value.body ?? 0;
+  const accessory = value.accessory ?? 0;
+  const colors = value.colors ?? DEFAULT_CONFIG.colors;
 
   return (
     <>
@@ -187,14 +352,6 @@ export function AvatarPicker({ value, onChange, playerName = 'You' }: AvatarPick
         @keyframes statusPulse {
           0%,100% { opacity: 1; box-shadow: 0 0 5px #00ff88; }
           50%      { opacity: 0.5; box-shadow: 0 0 12px #00ff88; }
-        }
-        @keyframes characterFloat {
-          0%,100% { transform: translateY(0); }
-          50%      { transform: translateY(-6px); }
-        }
-        .avatar-ring {
-          border-radius: 50%;
-          animation: avatarRingPulse 3s ease-in-out infinite;
         }
         .change-btn {
           position: relative;
@@ -213,7 +370,6 @@ export function AvatarPicker({ value, onChange, playerName = 'You' }: AvatarPick
           box-shadow: 0 0 28px rgba(255,0,0,0.5), 0 6px 24px rgba(255,0,0,0.25) !important;
         }
         .change-btn:active { transform: translateY(1px); }
-        .view-toggle:hover { color: #FFD700 !important; }
       `}</style>
 
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.1rem' }}>
@@ -231,63 +387,27 @@ export function AvatarPicker({ value, onChange, playerName = 'You' }: AvatarPick
         </div>
 
         {/* ── Preview ── */}
-        {hasAvatar && show3D ? (
+        {hasAvatar ? (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             style={{
-              width: '100%', height: 300, borderRadius: 12, overflow: 'hidden',
-              border: '1px solid rgba(255,0,0,0.25)',
-              background: 'radial-gradient(ellipse at bottom, #0d0505, #000)',
-              boxShadow: '0 0 40px rgba(255,0,0,0.08)',
-              animation: 'characterFloat 4s ease-in-out infinite',
+              display: 'flex', flexDirection: 'column', alignItems: 'center',
+              gap: '0.5rem', padding: '0.5rem 0',
             }}
           >
-            <Canvas camera={{ position: [0, 0.9, 2.4], fov: 42 }} style={{ background: 'transparent' }}>
-              <ambientLight intensity={0.7} />
-              <directionalLight position={[2, 4, 2]} intensity={1.2} />
-              <directionalLight position={[-2, 2, -2]} intensity={0.4} color="#ffd700" />
-              <AvatarModel url={value.url} />
-              <OrbitControls enablePan={false} enableZoom={false} minPolarAngle={Math.PI * 0.25} maxPolarAngle={Math.PI * 0.6} autoRotate autoRotateSpeed={1.5} />
-              <Environment preset="city" />
-            </Canvas>
+            <div style={{
+              border: '3px solid rgba(255,30,30,0.5)',
+              borderRadius: '50%',
+              padding: 8,
+              boxShadow: '0 0 24px rgba(255,0,0,0.3), 0 0 60px rgba(255,0,0,0.1)',
+              animation: 'avatarRingPulse 3s ease-in-out infinite',
+              background: 'radial-gradient(circle, rgba(255,0,0,0.05), transparent)',
+            }}>
+              <AvatarPreview head={head} body={body} accessory={accessory} colors={colors} size={120} />
+            </div>
           </motion.div>
-
-        ) : hasAvatar ? (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 0' }}
-          >
-            {!headshotError ? (
-              <div style={{ position: 'relative', width: 148, height: 148 }}>
-                {!headshotLoaded && (
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ repeat: Infinity, duration: 1.5, ease: 'linear' }}
-                    style={{ position: 'absolute', inset: 0, borderRadius: '50%', border: '2px solid rgba(255,215,0,0.12)', borderTopColor: '#FFD700' }}
-                  />
-                )}
-                <img
-                  src={headshotUrl}
-                  alt={playerName}
-                  onLoad={() => setHeadshotLoaded(true)}
-                  onError={() => setHeadshotError(true)}
-                  style={{
-                    width: 148, height: 148, borderRadius: '50%', objectFit: 'cover',
-                    border: '3px solid rgba(255,30,30,0.5)',
-                    boxShadow: '0 0 24px rgba(255,0,0,0.3), 0 0 60px rgba(255,0,0,0.1)',
-                    opacity: headshotLoaded ? 1 : 0,
-                    transition: 'opacity 0.4s',
-                  }}
-                  className="avatar-ring"
-                />
-              </div>
-            ) : (
-              <InitialsFallback name={playerName} size={130} />
-            )}
-          </motion.div>
-
         ) : (
-          /* No avatar placeholder */
           <motion.div
             animate={{ opacity: [0.4, 0.75, 0.4] }}
             transition={{ repeat: Infinity, duration: 2.5 }}
@@ -302,7 +422,7 @@ export function AvatarPicker({ value, onChange, playerName = 'You' }: AvatarPick
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               background: 'radial-gradient(circle, rgba(255,0,0,0.05), transparent)',
             }}>
-              <span style={{ fontSize: '3rem', opacity: 0.35 }}>🕵️</span>
+              <AvatarPreview head={0} body={0} accessory={0} colors={DEFAULT_CONFIG.colors} size={80} />
             </div>
             <p style={{ color: 'rgba(255,100,100,0.5)', fontSize: '0.7rem', fontFamily: 'var(--font-display)', letterSpacing: '0.12em' }}>
               NO CHARACTER YET
@@ -327,42 +447,27 @@ export function AvatarPicker({ value, onChange, playerName = 'You' }: AvatarPick
           {hasAvatar ? 'CHANGE CHARACTER' : 'CREATE YOUR CHARACTER'}
         </motion.button>
 
-        {/* ── Status + view toggle ── */}
+        {/* ── Status ── */}
         {hasAvatar && (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-            <motion.div
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-            >
-              <div style={{
-                width: 8, height: 8, borderRadius: '50%',
-                background: '#00ff88',
-                animation: 'statusPulse 2s ease-in-out infinite',
-              }} />
-              <p style={{ color: '#00ff88', fontSize: '0.72rem', fontFamily: 'var(--font-display)', letterSpacing: '0.1em' }}>
-                3D CHARACTER READY
-              </p>
-            </motion.div>
-            <button
-              onClick={() => setShow3D(!show3D)}
-              className="view-toggle"
-              style={{
-                background: 'none', border: 'none',
-                color: 'rgba(255,215,0,0.5)', fontSize: '0.7rem',
-                cursor: 'pointer', letterSpacing: '0.05em',
-                textDecoration: 'underline', transition: 'color 0.2s',
-              }}
-            >
-              {show3D ? 'Switch to headshot view' : 'Switch to 3D view'}
-            </button>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+          >
+            <div style={{
+              width: 8, height: 8, borderRadius: '50%',
+              background: '#00ff88',
+              animation: 'statusPulse 2s ease-in-out infinite',
+            }} />
+            <p style={{ color: '#00ff88', fontSize: '0.72rem', fontFamily: 'var(--font-display)', letterSpacing: '0.1em' }}>
+              CHARACTER READY
+            </p>
+          </motion.div>
         )}
       </div>
 
-      {/* RPM Modal via portal */}
       {showModal && (
-        <RPMModal onExport={handleExport} onClose={() => setShowModal(false)} />
+        <CreatorModal initial={value} onSave={handleSave} onClose={() => setShowModal(false)} />
       )}
     </>
   );

@@ -3,7 +3,7 @@
 // =============================================================================
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getHeadshotUrl, getAvatarColor, getInitials } from '../lib/avatarUtils';
+import { getAvatarThumbnail, getAvatarColor, getInitials } from '../lib/avatarUtils';
 import type { PublicPlayer } from '../types/game';
 
 interface VotePanelProps {
@@ -19,7 +19,7 @@ interface VotePanelProps {
 }
 
 function PlayerAvatar({ player, size = 64 }: { player: PublicPlayer; size?: number }) {
-  const hs = player.avatar?.url ? getHeadshotUrl(player.avatar.url) : '';
+  const hs = getAvatarThumbnail(player.avatar, size);
   if (hs) {
     return <img src={hs} alt={player.name} style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover' }} />;
   }
@@ -32,7 +32,7 @@ function PlayerAvatar({ player, size = 64 }: { player: PublicPlayer; size?: numb
 
 /** Small headshot circle for the voter strip */
 function VoterChip({ voter, hasMax }: { voter: PublicPlayer; hasMax: boolean }) {
-  const hs = voter.avatar?.url ? getHeadshotUrl(voter.avatar.url) : '';
+  const hs = getAvatarThumbnail(voter.avatar, 20);
   return (
     <div
       title={voter.name}

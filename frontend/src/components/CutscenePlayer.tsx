@@ -4,7 +4,7 @@
 // Uses Mixamo animation files from /animations/ when available,
 // falls back to procedural direct-bone manipulation otherwise.
 // =============================================================================
-import { Suspense, useRef, useMemo, useEffect, useState } from 'react';
+import { Suspense, Component, useRef, useMemo, useEffect, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
@@ -13,6 +13,21 @@ import { motion, AnimatePresence } from 'framer-motion';
 import * as THREE from 'three';
 import { getAvatarColor, getInitials } from '../lib/avatarUtils';
 import type { CutscenePayload } from '../types/game';
+
+// ── Error Boundary: catches useGLTF throws when RPM CDN is unreachable ──────────
+interface AvatarEBState { hasError: boolean }
+class AvatarErrorBoundary extends Component<
+  { fallback: React.ReactNode; children: React.ReactNode },
+  AvatarEBState
+> {
+  constructor(props: AvatarErrorBoundary['props']) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(err: unknown) { console.warn('[CutscenePlayer] Avatar load failed (RPM down?):', err); }
+  render() { return this.state.hasError ? this.props.fallback : this.props.children; }
+}
 
 // ── Phase types ───────────────────────────────────────────────────────────────
 type CutscenePhase =
@@ -354,10 +369,15 @@ function AvatarModel({ url, phase, phaseProgress, saved }: {
 
 
 // ── Geometric fallback (no RPM avatar) ───────────────────────────────────────
-function GeometricVictim({ phase, phaseProgress, saved, color }: {
-  phase: CutscenePhase; phaseProgress: number; saved: boolean; color: string;
+function GeometricVictim({ phase, phaseProgress, saved, color, avatarColors }: {
+  phase: CutscenePhase; phaseProgress: number; saved: boolean; color: string; avatarColors?: Record<string, string>;
 }) {
   const groupRef = useRef<THREE.Group>(null);
+  const outfitColor = avatarColors?.outfit || color;
+  const skinColor = avatarColors?.skin || color;
+  const accentColor = avatarColors?.accent || '#ffd700';
+  const hairColor = avatarColors?.hair || '#1a1a1a';
+
   useFrame(() => {
     const g = groupRef.current;
     if (!g) return;
@@ -370,9 +390,34 @@ function GeometricVictim({ phase, phaseProgress, saved, color }: {
   });
   return (
     <group ref={groupRef}>
-      <mesh position={[0, 0.7, 0]} castShadow><cylinderGeometry args={[0.22, 0.26, 0.95, 8]} /><meshStandardMaterial color={color} roughness={0.7} emissive={color} emissiveIntensity={0.25} /></mesh>
-      <mesh position={[0, 1.28, 0]}><cylinderGeometry args={[0.09, 0.11, 0.17, 8]} /><meshStandardMaterial color={color} /></mesh>
-      <mesh position={[0, 1.55, 0]} castShadow><sphereGeometry args={[0.24, 10, 10]} /><meshStandardMaterial color={color} roughness={0.6} emissive={color} emissiveIntensity={0.3} /></mesh>
+      {/* Legs */}
+      <mesh castShadow position={[-0.1, 0.3, 0]}><capsuleGeometry args={[0.07, 0.45, 4, 8]} /><meshStandardMaterial color="#1a1a1a" roughness={0.85} /></mesh>
+      <mesh castShadow position={[0.1, 0.3, 0]}><capsuleGeometry args={[0.07, 0.45, 4, 8]} /><meshStandardMaterial color="#1a1a1a" roughness={0.85} /></mesh>
+      {/* Torso */}
+      <mesh position={[0, 0.85, 0]} castShadow><cylinderGeometry args={[0.22, 0.26, 0.65, 8]} /><meshStandardMaterial color={outfitColor} roughness={0.65} emissive={outfitColor} emissiveIntensity={0.15} /></mesh>
+      {/* Shoulders */}
+      <mesh position={[0, 1.12, 0]}><boxGeometry args={[0.55, 0.12, 0.22]} /><meshStandardMaterial color={outfitColor} roughness={0.65} /></mesh>
+      {/* Belt */}
+      <mesh position={[0, 0.58, 0]}><cylinderGeometry args={[0.27, 0.27, 0.05, 8]} /><meshStandardMaterial color={accentColor} emissive={accentColor} emissiveIntensity={0.4} /></mesh>
+      {/* Arms */}
+      <mesh castShadow position={[-0.32, 0.85, 0]} rotation={[0, 0, 0.15]}><capsuleGeometry args={[0.06, 0.45, 4, 8]} /><meshStandardMaterial color={outfitColor} roughness={0.65} /></mesh>
+      <mesh castShadow position={[0.32, 0.85, 0]} rotation={[0, 0, -0.15]}><capsuleGeometry args={[0.06, 0.45, 4, 8]} /><meshStandardMaterial color={outfitColor} roughness={0.65} /></mesh>
+      {/* Hands */}
+      <mesh position={[-0.36, 0.55, 0]}><sphereGeometry args={[0.055, 8, 8]} /><meshStandardMaterial color={skinColor} /></mesh>
+      <mesh position={[0.36, 0.55, 0]}><sphereGeometry args={[0.055, 8, 8]} /><meshStandardMaterial color={skinColor} /></mesh>
+      {/* Neck */}
+      <mesh position={[0, 1.22, 0]}><cylinderGeometry args={[0.06, 0.08, 0.1, 8]} /><meshStandardMaterial color={skinColor} /></mesh>
+      {/* Head */}
+      <mesh position={[0, 1.42, 0]} castShadow><sphereGeometry args={[0.22, 12, 12]} /><meshStandardMaterial color={skinColor} roughness={0.6} emissive={skinColor} emissiveIntensity={0.2} /></mesh>
+      {/* Hair */}
+      <mesh position={[0, 1.58, -0.02]}><sphereGeometry args={[0.2, 10, 10, 0, Math.PI * 2, 0, Math.PI * 0.55]} /><meshStandardMaterial color={hairColor} roughness={0.9} /></mesh>
+      {/* Eyes */}
+      <mesh position={[-0.07, 1.42, 0.19]}><sphereGeometry args={[0.03, 6, 6]} /><meshStandardMaterial color="#fff" /></mesh>
+      <mesh position={[0.07, 1.42, 0.19]}><sphereGeometry args={[0.03, 6, 6]} /><meshStandardMaterial color="#fff" /></mesh>
+      <mesh position={[-0.07, 1.42, 0.21]}><sphereGeometry args={[0.015, 6, 6]} /><meshStandardMaterial color="#111" /></mesh>
+      <mesh position={[0.07, 1.42, 0.21]}><sphereGeometry args={[0.015, 6, 6]} /><meshStandardMaterial color="#111" /></mesh>
+      {/* Accent collar */}
+      <mesh position={[0, 1.12, 0.11]}><boxGeometry args={[0.16, 0.08, 0.04]} /><meshStandardMaterial color={accentColor} emissive={accentColor} emissiveIntensity={0.3} /></mesh>
     </group>
   );
 }
@@ -411,11 +456,13 @@ function CinematicScene({ cutscene, phase, phaseProgress }: {
       <Ground />
       <group position={[0, 0, 0]}>
         {hasAvatar ? (
-          <Suspense fallback={<GeometricVictim phase={phase} phaseProgress={phaseProgress} saved={saved} color={color} />}>
-            <AvatarModel url={victimAvatar!.url} phase={phase} phaseProgress={phaseProgress} saved={saved} />
-          </Suspense>
+          <AvatarErrorBoundary fallback={<GeometricVictim phase={phase} phaseProgress={phaseProgress} saved={saved} color={color} avatarColors={victimAvatar?.colors} />}>
+            <Suspense fallback={<GeometricVictim phase={phase} phaseProgress={phaseProgress} saved={saved} color={color} avatarColors={victimAvatar?.colors} />}>
+              <AvatarModel url={victimAvatar!.url} phase={phase} phaseProgress={phaseProgress} saved={saved} />
+            </Suspense>
+          </AvatarErrorBoundary>
         ) : (
-          <GeometricVictim phase={phase} phaseProgress={phaseProgress} saved={saved} color={color} />
+          <GeometricVictim phase={phase} phaseProgress={phaseProgress} saved={saved} color={color} avatarColors={victimAvatar?.colors} />
         )}
       </group>
       <MafiaFigure phase={phase} />

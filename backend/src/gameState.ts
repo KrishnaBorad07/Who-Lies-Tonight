@@ -20,7 +20,11 @@ export type NightOutcome = 'killed' | 'saved' | 'no_kill';
 
 /** Modular avatar definition */
 export interface Avatar {
-  url: string; // Ready Player Me GLB URL
+  url: string;
+  head?: number;
+  body?: number;
+  accessory?: number;
+  colors?: Record<string, string>;
 }
 
 /** Single player state */

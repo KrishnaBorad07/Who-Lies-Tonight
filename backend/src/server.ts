@@ -697,11 +697,15 @@ io.on('connection', (socket: Socket) => {
     touchRoom(data.code);
     broadcastVoteTally(data.code);
 
-    // Check if all alive players voted → early resolve
-    const alive = getAlivePlayers(room);
-    if (room.votes.size >= alive.length) {
+    // Early resolve: when ALL alive+connected players have voted, skip the timer
+    const aliveConnected = getAlivePlayers(room).filter((p) => p.connected);
+    const allVoted = aliveConnected.every((p) => room.votes.has(p.id));
+    if (allVoted && aliveConnected.length > 0) {
+      console.log(`[Vote] All ${aliveConnected.length} alive players voted early in room ${data.code}`);
+      systemMessage(data.code, 'All votes are in — revealing results now!');
       if (room.timer) clearTimeout(room.timer);
-      resolveVotePhase(data.code);
+      // 1s grace so clients can see the final tally before resolving
+      room.timer = setTimeout(() => resolveVotePhase(data.code), 1_000);
     }
   });
 

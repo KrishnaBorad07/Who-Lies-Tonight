@@ -59,7 +59,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AvatarPicker, DEFAULT_AVATAR } from './AvatarPicker';
-import { getHeadshotUrl, getAvatarColor, getInitials } from '../lib/avatarUtils';
+import { getAvatarColor, getInitials } from '../lib/avatarUtils';
+import { renderAvatarSVG, DEFAULT_AVATAR as DEFAULT_CONFIG } from '../lib/avatarConfig';
 import type { Avatar } from '../types/game';
 import type { useGameState } from '../hooks/useGameState';
 
@@ -117,7 +118,7 @@ export function Lobby({ api }: LobbyProps) {
 
   const handleCreate = () => { if (!username.trim()) return; createRoom(username.trim(), avatar); };
   const handleJoin = () => { if (!username.trim() || !roomCode.trim()) return; joinRoom(roomCode.toUpperCase(), username.trim(), avatar); };
-  const headshotUrl = avatar.url ? getHeadshotUrl(avatar.url) : '';
+  const hasCustomAvatar = avatar.head !== undefined;
 
   return (
     <div
@@ -478,8 +479,11 @@ export function Lobby({ api }: LobbyProps) {
               borderRadius: 6, padding: '0.6rem 0.85rem', marginBottom: '1.5rem',
               boxShadow: 'inset 0 0 20px rgba(255,0,0,0.04)',
             }}>
-              {headshotUrl ? (
-                <img src={headshotUrl} alt="avatar" style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(255,215,0,0.4)', flexShrink: 0 }} />
+              {hasCustomAvatar ? (
+                <div
+                  dangerouslySetInnerHTML={{ __html: renderAvatarSVG(avatar.head ?? 0, avatar.body ?? 0, avatar.accessory ?? 0, avatar.colors ?? DEFAULT_CONFIG.colors, 48) }}
+                  style={{ width: 48, height: 60, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                />
               ) : (
                 <div style={{
                   width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
@@ -497,7 +501,7 @@ export function Lobby({ api }: LobbyProps) {
                   {username || 'Your Alias'}
                 </p>
                 <p style={{ color: 'var(--noir-text-dim)', fontSize: '0.7rem' }}>
-                  {avatar.url ? '✦ Custom 3D character' : '○ Ready to enter the city'}
+                  {hasCustomAvatar ? '✦ Custom character' : '○ Ready to enter the city'}
                 </p>
               </div>
             </div>

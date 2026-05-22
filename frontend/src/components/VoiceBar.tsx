@@ -4,7 +4,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import type { VoiceState } from '../hooks/useVoiceChat';
 import type { PublicPlayer } from '../types/game';
-import { getHeadshotUrl, getAvatarColor, getInitials } from '../lib/avatarUtils';
+import { getAvatarThumbnail, getAvatarColor, getInitials } from '../lib/avatarUtils';
 
 interface VoiceBarProps {
     voice: VoiceState;
@@ -23,7 +23,7 @@ const CHANNEL_COLORS: Record<string, string> = {
 };
 
 function PeerAvatar({ player, speaking }: { player: PublicPlayer; speaking: boolean }) {
-    const hs = player.avatar?.url ? getHeadshotUrl(player.avatar.url) : '';
+    const hs = getAvatarThumbnail(player.avatar, 28);
     return (
         <div style={{ position: 'relative' }}>
             {/* Speaking pulse ring */}

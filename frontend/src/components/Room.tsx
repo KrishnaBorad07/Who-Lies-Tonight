@@ -14,7 +14,7 @@ import { NightActionModal } from './NightActionModal';
 import { VotePanel } from './VotePanel';
 import { GameEndScreen } from './GameEndScreen';
 import { RoleRevealScreen } from './RoleRevealScreen';
-import { getHeadshotUrl, getAvatarColor, getInitials } from '../lib/avatarUtils';
+import { getAvatarThumbnail, getAvatarColor, getInitials } from '../lib/avatarUtils';
 import { useVoiceChat } from '../hooks/useVoiceChat';
 import { VoiceBar } from './VoiceBar';
 import { useSocket } from '../hooks/useSocket';
@@ -172,7 +172,7 @@ export function Room({ api }: RoomProps) {
   // ── Countdown timer ──
   const countdown = usePhaseTimer(timer, phase);
 
-  const headshotUrl = myPlayer?.avatar?.url ? getHeadshotUrl(myPlayer.avatar.url) : '';
+  const headshotUrl = getAvatarThumbnail(myPlayer?.avatar, 36);
 
   return (
     <div
@@ -404,7 +404,7 @@ export function Room({ api }: RoomProps) {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', flex: 1, overflowY: 'auto', marginBottom: '1.25rem' }}>
               {players.map((player, i) => {
-                const playerHeadshot = player.avatar?.url ? getHeadshotUrl(player.avatar.url) : '';
+                const playerHeadshot = getAvatarThumbnail(player.avatar, 36);
                 return (
                   <motion.div
                     key={player.id}
@@ -733,7 +733,7 @@ export function Room({ api }: RoomProps) {
                   <div className="flex flex-col gap-2">
                     {myMafiaTeam.map((m) => {
                       const pub = players.find((p) => p.id === m.id);
-                      const memberHeadshot = m.avatar?.url ? getHeadshotUrl(m.avatar.url) : '';
+                      const memberHeadshot = getAvatarThumbnail(m.avatar, 28);
                       return (
                         <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                           {memberHeadshot

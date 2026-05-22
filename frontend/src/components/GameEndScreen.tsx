@@ -4,7 +4,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useMemo } from 'react';
 import type { GameEndPayload, Role } from '../types/game';
-import { getHeadshotUrl, getAvatarColor, getInitials } from '../lib/avatarUtils';
+import { getAvatarThumbnail, getAvatarColor, getInitials } from '../lib/avatarUtils';
 
 interface GameEndScreenProps {
   data: GameEndPayload;
@@ -218,7 +218,7 @@ export function GameEndScreen({ data, players, myId, roomCode, onPlayAgain, onLe
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.25rem' }}>
               {data.roles.map((roleEntry, i) => {
                 const pub = playerMap.get(roleEntry.id);
-                const headshot = pub?.avatar?.url ? getHeadshotUrl(pub.avatar.url) : null;
+                const headshot = getAvatarThumbnail(pub?.avatar, 56) || null;
                 const isMe = roleEntry.id === myId;
 
                 return (

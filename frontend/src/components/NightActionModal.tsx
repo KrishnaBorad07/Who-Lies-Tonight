@@ -2,7 +2,7 @@
 // components/NightActionModal.tsx – Role-specific night action UI
 // =============================================================================
 import { motion, AnimatePresence } from 'framer-motion';
-import { getHeadshotUrl, getAvatarColor, getInitials } from '../lib/avatarUtils';
+import { getAvatarThumbnail, getAvatarColor, getInitials } from '../lib/avatarUtils';
 import type { PublicPlayer, Role } from '../types/game';
 
 interface NightActionModalProps {
@@ -42,7 +42,7 @@ const ROLE_CONFIG: Record<
 };
 
 function PlayerAvatar({ player, size = 48 }: { player: PublicPlayer; size?: number }) {
-  const hs = player.avatar?.url ? getHeadshotUrl(player.avatar.url) : '';
+  const hs = getAvatarThumbnail(player.avatar, size);
   if (hs) {
     return (
       <img

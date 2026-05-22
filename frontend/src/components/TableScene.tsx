@@ -4,6 +4,7 @@
 import {
   memo,
   Suspense,
+  Component,
   useEffect,
   useMemo,
   useRef,
@@ -16,6 +17,21 @@ import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
 import type { Phase, PublicPlayer, Role } from '../types/game';
+
+// ── Avatar Error Boundary — catches useGLTF throws when RPM is unreachable ────
+interface AvatarEBState { hasError: boolean }
+class AvatarErrorBoundary extends Component<
+  { fallback: React.ReactNode; children: React.ReactNode },
+  AvatarEBState
+> {
+  constructor(props: AvatarErrorBoundary['props']) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(err: unknown) { console.warn('[TableScene] Avatar load failed (RPM down?):', err); }
+  render() { return this.state.hasError ? this.props.fallback : this.props.children; }
+}
 
 interface TableSceneProps {
   players: PublicPlayer[];
@@ -1105,27 +1121,237 @@ function FallbackAvatar({
   alive,
   connected,
   isMe,
+  avatarColors,
+  avatarHead,
+  avatarBody,
+  avatarAccessory,
 }: {
   alive: boolean;
   connected: boolean;
   isMe: boolean;
+  avatarColors?: Record<string, string>;
+  avatarHead?: number;
+  avatarBody?: number;
+  avatarAccessory?: number;
 }) {
-  const color = alive
-    ? connected
-      ? isMe ? '#d4b95f' : '#5f6f92'
-      : '#4a4f5e'
-    : '#2f2f36';
+  const outfitBase = avatarColors?.outfit || (isMe ? '#d4b95f' : '#5f6f92');
+  const skinBase = avatarColors?.skin || '#d5c2a2';
+  const accentBase = avatarColors?.accent || '#ffd700';
+  const hairBase = avatarColors?.hair || '#1a1a1a';
+  const head = avatarHead ?? 0;
+  const body = avatarBody ?? 0;
+  const acc = avatarAccessory ?? -1;
+
+  const opacityMul = alive ? (connected ? 1 : 0.72) : 0.34;
+  const outfitColor = alive ? outfitBase : '#2f2f36';
+
+  // Head shape variations
+  const headScaleX = [1, 1.15, 0.85, 1.2, 0.95, 1.05, 1.18, 0.8, 1.1, 0.9][head] ?? 1;
+  const headScaleY = [1, 0.9, 1.15, 0.85, 1.1, 1.05, 0.88, 1.2, 0.95, 1.08][head] ?? 1;
+
+  // Body width based on outfit
+  const torsoWidthTop = [0.22, 0.28, 0.2, 0.22, 0.24, 0.3, 0.26, 0.2][body] ?? 0.22;
+  const torsoWidthBot = [0.24, 0.32, 0.22, 0.24, 0.26, 0.34, 0.28, 0.24][body] ?? 0.24;
+  const shoulderExtra = [0, 0.04, 0, 0.02, 0.03, 0.06, 0.04, 0][body] ?? 0;
 
   return (
-    <group position={[0, 0.18, 0]} scale={[1, 1, 1]}>
-      <mesh castShadow receiveShadow position={[0, 1, 0]}>
-        <capsuleGeometry args={[0.25, 1.15, 6, 12]} />
-        <meshStandardMaterial color={color} roughness={0.72} metalness={0.08} />
+    <group position={[0, 0.05, 0]}>
+      {/* ── Legs ── */}
+      <mesh castShadow position={[-0.1, 0.35, 0]}>
+        <capsuleGeometry args={[0.07, 0.5, 4, 8]} />
+        <meshStandardMaterial color="#1a1a1a" roughness={0.85} transparent opacity={opacityMul} />
       </mesh>
-      <mesh castShadow receiveShadow position={[0, 1.88, 0]}>
-        <sphereGeometry args={[0.22, 16, 16]} />
-        <meshStandardMaterial color="#d5c2a2" roughness={0.7} />
+      <mesh castShadow position={[0.1, 0.35, 0]}>
+        <capsuleGeometry args={[0.07, 0.5, 4, 8]} />
+        <meshStandardMaterial color="#1a1a1a" roughness={0.85} transparent opacity={opacityMul} />
       </mesh>
+      {/* Shoes */}
+      <mesh position={[-0.1, 0.06, 0.04]}>
+        <boxGeometry args={[0.12, 0.08, 0.2]} />
+        <meshStandardMaterial color="#111" roughness={0.9} transparent opacity={opacityMul} />
+      </mesh>
+      <mesh position={[0.1, 0.06, 0.04]}>
+        <boxGeometry args={[0.12, 0.08, 0.2]} />
+        <meshStandardMaterial color="#111" roughness={0.9} transparent opacity={opacityMul} />
+      </mesh>
+
+      {/* ── Torso ── */}
+      <mesh castShadow receiveShadow position={[0, 0.95, 0]}>
+        <cylinderGeometry args={[torsoWidthTop, torsoWidthBot, 0.65, 8]} />
+        <meshStandardMaterial color={outfitColor} roughness={0.65} metalness={0.05} transparent opacity={opacityMul} />
+      </mesh>
+
+      {/* Shoulders */}
+      <mesh castShadow position={[0, 1.22, 0]}>
+        <boxGeometry args={[0.55 + shoulderExtra * 2, 0.12, 0.22]} />
+        <meshStandardMaterial color={outfitColor} roughness={0.65} metalness={0.05} transparent opacity={opacityMul} />
+      </mesh>
+
+      {/* Accent lapel / collar */}
+      <mesh position={[0, 1.16, 0.1]}>
+        <boxGeometry args={[0.18, 0.1, 0.05]} />
+        <meshStandardMaterial color={accentBase} emissive={accentBase} emissiveIntensity={0.4} transparent opacity={opacityMul} />
+      </mesh>
+      {/* Belt */}
+      <mesh position={[0, 0.68, 0]}>
+        <cylinderGeometry args={[torsoWidthBot + 0.01, torsoWidthBot + 0.01, 0.05, 8]} />
+        <meshStandardMaterial color={accentBase} emissive={accentBase} emissiveIntensity={0.2} transparent opacity={opacityMul} />
+      </mesh>
+
+      {/* ── Arms ── */}
+      <mesh castShadow position={[-0.32 - shoulderExtra, 0.95, 0]} rotation={[0, 0, 0.15]}>
+        <capsuleGeometry args={[0.06, 0.5, 4, 8]} />
+        <meshStandardMaterial color={outfitColor} roughness={0.65} transparent opacity={opacityMul} />
+      </mesh>
+      <mesh castShadow position={[0.32 + shoulderExtra, 0.95, 0]} rotation={[0, 0, -0.15]}>
+        <capsuleGeometry args={[0.06, 0.5, 4, 8]} />
+        <meshStandardMaterial color={outfitColor} roughness={0.65} transparent opacity={opacityMul} />
+      </mesh>
+      {/* Hands */}
+      <mesh position={[-0.36 - shoulderExtra, 0.62, 0]}>
+        <sphereGeometry args={[0.055, 8, 8]} />
+        <meshStandardMaterial color={skinBase} roughness={0.7} transparent opacity={opacityMul} />
+      </mesh>
+      <mesh position={[0.36 + shoulderExtra, 0.62, 0]}>
+        <sphereGeometry args={[0.055, 8, 8]} />
+        <meshStandardMaterial color={skinBase} roughness={0.7} transparent opacity={opacityMul} />
+      </mesh>
+
+      {/* ── Neck ── */}
+      <mesh position={[0, 1.32, 0]}>
+        <cylinderGeometry args={[0.06, 0.08, 0.1, 8]} />
+        <meshStandardMaterial color={skinBase} roughness={0.7} transparent opacity={opacityMul} />
+      </mesh>
+
+      {/* ── Head ── */}
+      <mesh castShadow receiveShadow position={[0, 1.52, 0]} scale={[headScaleX, headScaleY, 1]}>
+        <sphereGeometry args={[0.2, 16, 16]} />
+        <meshStandardMaterial color={skinBase} roughness={0.6} transparent opacity={opacityMul} />
+      </mesh>
+
+      {/* Eyes */}
+      <mesh position={[-0.07 * headScaleX, 1.52, 0.17]}>
+        <sphereGeometry args={[0.03, 8, 8]} />
+        <meshStandardMaterial color="#fff" transparent opacity={opacityMul} />
+      </mesh>
+      <mesh position={[0.07 * headScaleX, 1.52, 0.17]}>
+        <sphereGeometry args={[0.03, 8, 8]} />
+        <meshStandardMaterial color="#fff" transparent opacity={opacityMul} />
+      </mesh>
+      <mesh position={[-0.07 * headScaleX, 1.52, 0.19]}>
+        <sphereGeometry args={[0.015, 6, 6]} />
+        <meshStandardMaterial color="#111" transparent opacity={opacityMul} />
+      </mesh>
+      <mesh position={[0.07 * headScaleX, 1.52, 0.19]}>
+        <sphereGeometry args={[0.015, 6, 6]} />
+        <meshStandardMaterial color="#111" transparent opacity={opacityMul} />
+      </mesh>
+
+      {/* Hair */}
+      <mesh position={[0, 1.66, -0.02]} scale={[headScaleX, 1, 1]}>
+        <sphereGeometry args={[0.19, 12, 12, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
+        <meshStandardMaterial color={hairBase} roughness={0.9} transparent opacity={opacityMul} />
+      </mesh>
+
+      {/* ── Accessory: Fedora ── */}
+      {acc === 0 && (
+        <group position={[0, 1.74, 0]}>
+          <mesh>
+            <cylinderGeometry args={[0.15 * headScaleX, 0.16 * headScaleX, 0.14, 12]} />
+            <meshStandardMaterial color={hairBase} roughness={0.8} transparent opacity={opacityMul} />
+          </mesh>
+          <mesh position={[0, -0.04, 0]}>
+            <cylinderGeometry args={[0.26 * headScaleX, 0.26 * headScaleX, 0.03, 16]} />
+            <meshStandardMaterial color={hairBase} roughness={0.8} transparent opacity={opacityMul} />
+          </mesh>
+          <mesh position={[0, 0.0, 0]}>
+            <cylinderGeometry args={[0.17 * headScaleX, 0.17 * headScaleX, 0.02, 16]} />
+            <meshStandardMaterial color={accentBase} emissive={accentBase} emissiveIntensity={0.3} transparent opacity={opacityMul} />
+          </mesh>
+        </group>
+      )}
+
+      {/* ── Accessory: Sunglasses ── */}
+      {acc === 1 && (
+        <group position={[0, 1.52, 0.18]}>
+          <mesh position={[-0.07 * headScaleX, 0, 0]}>
+            <boxGeometry args={[0.08, 0.04, 0.02]} />
+            <meshStandardMaterial color="#111" metalness={0.8} roughness={0.2} transparent opacity={opacityMul} />
+          </mesh>
+          <mesh position={[0.07 * headScaleX, 0, 0]}>
+            <boxGeometry args={[0.08, 0.04, 0.02]} />
+            <meshStandardMaterial color="#111" metalness={0.8} roughness={0.2} transparent opacity={opacityMul} />
+          </mesh>
+          <mesh position={[0, 0, 0]}>
+            <boxGeometry args={[0.04, 0.015, 0.02]} />
+            <meshStandardMaterial color="#333" metalness={0.8} transparent opacity={opacityMul} />
+          </mesh>
+        </group>
+      )}
+
+      {/* ── Accessory: Gold Chain ── */}
+      {acc === 3 && (
+        <mesh position={[0, 1.2, 0.12]}>
+          <torusGeometry args={[0.08, 0.015, 8, 16]} />
+          <meshStandardMaterial color={accentBase} emissive={accentBase} emissiveIntensity={0.6} metalness={0.9} roughness={0.1} transparent opacity={opacityMul} />
+        </mesh>
+      )}
+
+      {/* ── Accessory: Scar ── */}
+      {acc === 4 && (
+        <mesh position={[-0.04, 1.55, 0.19]} rotation={[0, 0, 0.6]}>
+          <boxGeometry args={[0.12, 0.015, 0.01]} />
+          <meshStandardMaterial color="#cc0000" emissive="#880000" emissiveIntensity={0.5} transparent opacity={opacityMul} />
+        </mesh>
+      )}
+
+      {/* ── Accessory: Eye Patch ── */}
+      {acc === 5 && (
+        <mesh position={[-0.07 * headScaleX, 1.52, 0.19]}>
+          <sphereGeometry args={[0.04, 8, 8]} />
+          <meshStandardMaterial color="#1a1a1a" transparent opacity={opacityMul} />
+        </mesh>
+      )}
+
+      {/* ── Accessory: Bow Tie ── */}
+      {acc === 6 && (
+        <group position={[0, 1.24, 0.12]}>
+          <mesh position={[-0.03, 0, 0]} rotation={[0, 0, 0.4]}>
+            <boxGeometry args={[0.06, 0.04, 0.02]} />
+            <meshStandardMaterial color={accentBase} emissive={accentBase} emissiveIntensity={0.3} transparent opacity={opacityMul} />
+          </mesh>
+          <mesh position={[0.03, 0, 0]} rotation={[0, 0, -0.4]}>
+            <boxGeometry args={[0.06, 0.04, 0.02]} />
+            <meshStandardMaterial color={accentBase} emissive={accentBase} emissiveIntensity={0.3} transparent opacity={opacityMul} />
+          </mesh>
+        </group>
+      )}
+
+      {/* ── Accessory: Bandana / Cap ── */}
+      {acc === 7 && (
+        <mesh position={[0, 1.68, 0.02]} scale={[headScaleX, 0.6, 1]}>
+          <sphereGeometry args={[0.21, 12, 12, 0, Math.PI * 2, 0, Math.PI * 0.45]} />
+          <meshStandardMaterial color={accentBase} roughness={0.8} transparent opacity={opacityMul} />
+        </mesh>
+      )}
+
+      {/* ── Accessory: Pocket Watch ── */}
+      {acc === 9 && (
+        <group position={[0.2, 0.85, 0.12]}>
+          <mesh>
+            <cylinderGeometry args={[0.04, 0.04, 0.01, 12]} />
+            <meshStandardMaterial color={accentBase} emissive={accentBase} emissiveIntensity={0.5} metalness={0.9} roughness={0.1} transparent opacity={opacityMul} />
+          </mesh>
+        </group>
+      )}
+
+      {/* ── Glow ring under feet (accent color) ── */}
+      {alive && (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.02, 0]}>
+          <ringGeometry args={[0.35, 0.42, 24]} />
+          <meshStandardMaterial color={accentBase} emissive={accentBase} emissiveIntensity={0.6} transparent opacity={opacityMul * 0.4} depthWrite={false} />
+        </mesh>
+      )}
     </group>
   );
 }
@@ -1349,16 +1575,18 @@ function AvatarSeat({
 
       <group rotation={[0, facingY, 0]}>
         {player.avatar?.url ? (
-          <Suspense fallback={<FallbackAvatar alive={player.alive} connected={player.connected} isMe={isMe} />}>
-            <RPMAvatarModel
-              url={player.avatar.url}
-              alive={player.alive}
-              connected={player.connected}
-              bobSeed={index * 0.77}
-            />
-          </Suspense>
+          <AvatarErrorBoundary fallback={<FallbackAvatar alive={player.alive} connected={player.connected} isMe={isMe} avatarColors={player.avatar.colors} avatarHead={player.avatar.head} avatarBody={player.avatar.body} avatarAccessory={player.avatar.accessory} />}>
+            <Suspense fallback={<FallbackAvatar alive={player.alive} connected={player.connected} isMe={isMe} avatarColors={player.avatar.colors} avatarHead={player.avatar.head} avatarBody={player.avatar.body} avatarAccessory={player.avatar.accessory} />}>
+              <RPMAvatarModel
+                url={player.avatar.url}
+                alive={player.alive}
+                connected={player.connected}
+                bobSeed={index * 0.77}
+              />
+            </Suspense>
+          </AvatarErrorBoundary>
         ) : (
-          <FallbackAvatar alive={player.alive} connected={player.connected} isMe={isMe} />
+          <FallbackAvatar alive={player.alive} connected={player.connected} isMe={isMe} avatarColors={player.avatar?.colors} avatarHead={player.avatar?.head} avatarBody={player.avatar?.body} avatarAccessory={player.avatar?.accessory} />
         )}
       </group>
       {player.alive && (
@@ -1540,13 +1768,8 @@ export const TableScene = memo(function TableScene({
   onPlayerClick,
   showLabels = true,
 }: TableSceneProps) {
-  useEffect(() => {
-    players.forEach((player) => {
-      if (player.avatar?.url) {
-        useGLTF.preload(player.avatar.url);
-      }
-    });
-  }, [players]);
+  // NOTE: useGLTF.preload removed — it eagerly fires fetch requests and crashes
+  // the Canvas when the RPM CDN is unreachable. Loading happens lazily instead.
 
   const isDaylight = phase === 'day' || phase === 'vote';
   const sceneVeilOpacity = isDaylight ? 0.18 : 0;

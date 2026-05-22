@@ -1,35 +1,30 @@
 // =============================================================================
-// lib/avatarUtils.ts – Ready Player Me avatar helpers
+// lib/avatarUtils.ts – Avatar helpers (modular + legacy RPM support)
 // =============================================================================
+import { renderAvatarSVG, DEFAULT_AVATAR as DEFAULT_CONFIG } from './avatarConfig';
+import type { Avatar } from '../types/game';
 
 /** Extract the avatar ID from a full RPM GLB URL */
 export function getAvatarId(url: string): string {
-  // e.g. https://models.readyplayer.me/638df693d72bffc6fa17943c.glb → 638df693d72bffc6fa17943c
   return url
     .replace('https://models.readyplayer.me/', '')
     .replace('.glb', '')
     .split('?')[0];
 }
 
-/**
- * Get the RPM headshot PNG.
- * Using plain .png with no extra params — camera/quality params break demo avatars.
- * Simple format: https://models.readyplayer.me/{id}.png
- */
 export function getHeadshotUrl(url: string): string {
   if (!url) return '';
   const id = getAvatarId(url);
   return `https://models.readyplayer.me/${id}.png`;
 }
 
-/** Get a portrait PNG URL (larger, half-body) */
 export function getPortraitUrl(url: string, size = 256): string {
   if (!url) return '';
   const id = getAvatarId(url);
   return `https://models.readyplayer.me/${id}.png?scene=fullbody-portrait-v1-transparent&size=${size}`;
 }
 
-/** Default empty avatar (no RPM URL created yet) */
+/** Default empty avatar */
 export const DEFAULT_AVATAR = { url: '' };
 
 /** Get player initials for the fallback avatar */
@@ -43,4 +38,29 @@ export function getAvatarColor(name: string): string {
   let hash = 0;
   for (const c of name) hash = (hash * 31 + c.charCodeAt(0)) % COLORS.length;
   return COLORS[Math.abs(hash)];
+}
+
+/** Check if an avatar has been customized (modular system) */
+export function hasCustomAvatar(avatar: Avatar | null | undefined): boolean {
+  return avatar != null && avatar.head !== undefined;
+}
+
+/** Get an SVG data URL for a modular avatar (usable as an img src) */
+export function getAvatarSvgDataUrl(avatar: Avatar, size = 48): string {
+  const svg = renderAvatarSVG(
+    avatar.head ?? 0,
+    avatar.body ?? 0,
+    avatar.accessory ?? 0,
+    avatar.colors ?? DEFAULT_CONFIG.colors,
+    size,
+  );
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+/** Get avatar thumbnail: returns SVG data URL for custom avatars, RPM headshot for legacy, or empty string */
+export function getAvatarThumbnail(avatar: Avatar | null | undefined, size = 48): string {
+  if (!avatar) return '';
+  if (hasCustomAvatar(avatar)) return getAvatarSvgDataUrl(avatar, size);
+  if (avatar.url) return getHeadshotUrl(avatar.url);
+  return '';
 }
