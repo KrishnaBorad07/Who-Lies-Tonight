@@ -1,0 +1,41 @@
+# render.yaml — Render Blueprint for "Who Lies Tonight"
+# Deploy both backend (web service) and frontend (static site)
+
+services:
+  # ── Backend: Express + Socket.io ──────────────────────────────────
+  - type: web
+    name: wlt-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+
+  # ── Frontend: React + Vite (static site) ──────────────────────────
+  - type: web
+    name: wlt-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_SOCKET_URL
+        sync: false
+      - key: VITE_BACKEND_URL
+        sync: false
+      - key: VITE_ELEVENLABS_API_KEY
+        sync: false
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: SAMEORIGIN

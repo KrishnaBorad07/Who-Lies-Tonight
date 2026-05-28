@@ -58,16 +58,18 @@ import type {
 const app = express();
 const httpServer = createServer(app);
 
+const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+
 const io = new Server(httpServer, {
   cors: {
-    origin: '*', // In production: restrict to your Vercel domain
+    origin: CORS_ORIGIN,
     methods: ['GET', 'POST'],
   },
   pingTimeout: 60_000,
   pingInterval: 25_000,
 });
 
-app.use(cors());
+app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.json());
 
 // ── Socket-to-room mapping ────────────────────────────────────────────────────
